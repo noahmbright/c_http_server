@@ -1,4 +1,5 @@
 #include "http_server.h"
+#include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,7 +12,8 @@ static void set_beginning_of_current() {
 }
 
 static int is_alphabetic(char c) {
-  return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+  return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || c == '-' ||
+         c == '_';
 }
 
 static int is_numeric(char c) { return (c >= '0' && c <= '9'); }
@@ -28,6 +30,10 @@ static int is_whitespace() {
 static void skip_whitespace() {
   while (is_whitespace())
     current_location++;
+}
+
+static int check_crlf() {
+  return (*current_location == '\r' && current_location[1] == '\n');
 }
 
 static int consume_crlf() {
@@ -64,10 +70,17 @@ static URI parse_uri() {
   return uri;
 }
 
+static int check_keyword(const char *keyword) {
+  int length = strlen(keyword);
+  return current_length() == length &&
+         memcmp(beginning_of_current, keyword, length) == 0;
+}
+
 // https://datatracker.ietf.org/doc/html/rfc1945#section-5.1
 // Request-Line = Method SP Request-URI SP HTTP-Version CRLF
 static RequestLine parse_request_line(const char *text) {
   RequestLine request_line;
+  memset(&request_line, 0, sizeof(request_line));
 
   skip_whitespace();
   set_beginning_of_current();
@@ -75,13 +88,13 @@ static RequestLine parse_request_line(const char *text) {
 
   switch (*current_location) {
   case 'G':
-    if (current_length() == 3 && memcmp(beginning_of_current, "GET", 3) == 0)
+    if (check_keyword("GET"))
       request_line.method = METHOD_GET;
   case 'P':
-    if (current_length() == 4 && memcmp(beginning_of_current, "POST", 4) == 0)
+    if (check_keyword("POST"))
       request_line.method = METHOD_POST;
   case 'H':
-    if (current_length() == 4 && memcmp(beginning_of_current, "HEAD", 4) == 0)
+    if (check_keyword("HEAD"))
       request_line.method = METHOD_HEAD;
   default:
     request_line.method = METHOD_EXTENSION;
@@ -94,8 +107,15 @@ static RequestLine parse_request_line(const char *text) {
   request_line.uri = parse_uri();
   skip_whitespace();
 
-  // HTTP
-  //
+  // no HHTP version: found a simple request
+  if (check_crlf()) {
+    request_line.is_simple = 1;
+    request_line.http_minor = 9;
+    consume_crlf();
+    return request_line;
+  }
+
+  // on the "HTTP"
   set_beginning_of_current();
   advance_to_end_of_current();
   int http_properly_formatted =
@@ -136,6 +156,50 @@ static RequestLine parse_request_line(const char *text) {
   }
 
   return request_line;
+}
+
+void parse_headers() {
+  while (!check_crlf()) {
+    set_beginning_of_current();
+    while (is_alphabetic(*current_location))
+      current_location++;
+
+    switch (*beginning_of_current) {
+    case 'A':
+      check_keyword("Allowed");
+      check_keyword("Authorization");
+    case 'C':
+      check_keyword("Content-Encoding");
+      check_keyword("Content-Length");
+      check_keyword("Content-Type");
+    case 'D':
+      check_keyword("Date");
+    case 'E':
+      check_keyword("Expires");
+    case 'F':
+      check_keyword("From");
+    case 'I':
+      check_keyword("If-Modified-Since");
+    case 'L':
+      check_keyword("Last-Modified");
+      check_keyword("Location");
+    case 'P':
+      check_keyword("Pragma");
+    case 'R':
+      check_keyword("Referer");
+    case 'S':
+      check_keyword("Server");
+    case 'U':
+      check_keyword("User-Agent");
+    case 'W':
+      check_keyword("WWW-Authenticate");
+    default:
+      // FIXME Handle better
+      assert(0);
+    }
+  }
+
+  consume_crlf();
 }
 
 // HTTP-message   = Simple-Request       ; HTTP/0.9 messages

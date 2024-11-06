@@ -10,4 +10,5 @@ typedef struct {
   URI uri;
   unsigned http_major;
   unsigned http_minor;
+  int is_simple;
 } RequestLine;
