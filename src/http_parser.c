@@ -1,5 +1,6 @@
 #include "http_server.h"
 #include <assert.h>
+#include <cstdio>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -86,19 +87,10 @@ static RequestLine parse_request_line(const char *text) {
   set_beginning_of_current();
   advance_to_end_of_current();
 
-  switch (*current_location) {
-  case 'G':
-    if (check_keyword("GET"))
-      request_line.method = METHOD_GET;
-  case 'P':
-    if (check_keyword("POST"))
-      request_line.method = METHOD_POST;
-  case 'H':
-    if (check_keyword("HEAD"))
-      request_line.method = METHOD_HEAD;
-  default:
-    request_line.method = METHOD_EXTENSION;
-  }
+  while (is_alphabetic(*current_location))
+    ++current_location;
+  request_line.method = beginning_of_current;
+  request_line.method_length = current_length();
 
   // the spec says this should be a single space, but here we allow for any
   // number of spaces and tabs
@@ -158,48 +150,50 @@ static RequestLine parse_request_line(const char *text) {
   return request_line;
 }
 
-void parse_headers() {
+Header *new_header() {
+  Header *header = malloc(sizeof(Header));
+  memset(header, 0, sizeof(Header));
+  return header;
+}
+
+Header *parse_headers() {
+  Header anchor;
+  anchor.next = NULL;
+  Header *previous_header = &anchor;
+
+  // headers end when we get two CRLFs in a row
+  // the first comes from the end of the last header
   while (!check_crlf()) {
+    Header *current_header = new_header();
+
     set_beginning_of_current();
     while (is_alphabetic(*current_location))
       current_location++;
+    current_header->header_string = beginning_of_current;
+    current_header->header_length = current_length();
 
-    switch (*beginning_of_current) {
-    case 'A':
-      check_keyword("Allowed");
-      check_keyword("Authorization");
-    case 'C':
-      check_keyword("Content-Encoding");
-      check_keyword("Content-Length");
-      check_keyword("Content-Type");
-    case 'D':
-      check_keyword("Date");
-    case 'E':
-      check_keyword("Expires");
-    case 'F':
-      check_keyword("From");
-    case 'I':
-      check_keyword("If-Modified-Since");
-    case 'L':
-      check_keyword("Last-Modified");
-      check_keyword("Location");
-    case 'P':
-      check_keyword("Pragma");
-    case 'R':
-      check_keyword("Referer");
-    case 'S':
-      check_keyword("Server");
-    case 'U':
-      check_keyword("User-Agent");
-    case 'W':
-      check_keyword("WWW-Authenticate");
-    default:
-      // FIXME Handle better
-      assert(0);
+    skip_whitespace();
+
+    if (!(*current_location++ == ':')) {
+      fprintf(stderr, "header not formatted\n");
+      exit(1);
     }
+
+    skip_whitespace();
+    set_beginning_of_current();
+    while (is_alphabetic(*current_location))
+      current_location++;
+    current_header->body_string = beginning_of_current;
+    current_header->body_length = current_length();
+
+    consume_crlf();
+
+    previous_header->next = current_header;
+    previous_header = previous_header->next;
   }
 
   consume_crlf();
+  return anchor.next;
 }
 
 // HTTP-message   = Simple-Request       ; HTTP/0.9 messages
