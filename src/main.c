@@ -14,13 +14,16 @@
 #define BUFFER_LENGTH (4096)
 
 void sigchld_handler(int s) {
-  // waitpid() might overwrite errno, so we save and restore it:
   int saved_errno = errno;
-
   while (waitpid(-1, NULL, WNOHANG) > 0)
     ;
-
   errno = saved_errno;
+}
+
+void print_by_length(const char *s, int l) {
+  for (int i = 0; i < l; i++)
+    printf("%c", s[i]);
+  printf("\n");
 }
 
 int main() {
@@ -46,9 +49,13 @@ int main() {
       perror("received -1 bytes");
       exit(1);
     }
-    buffer[received_bytes] = '\0';
 
-    printf("%s\n", buffer);
+    buffer[received_bytes] = '\0';
+    RequestLine request_line = parse_request_line(buffer);
+
+    printf("RECEIVED: \n%s\n", buffer);
+    printf("PARSED REQUEST LINE HTTP VERSION: %d/%d\n", request_line.http_major,
+           request_line.http_major);
 
     if (!fork()) {
       close(socket);

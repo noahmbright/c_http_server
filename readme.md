@@ -62,3 +62,8 @@ connection between client and server. These system calls work over TCP connectio
 * [Kazuho Oku's
   Picohttpparser](https://github.com/h2o/picohttpparser/tree/master) This is a
   really good resource for a fast parser, using some arcane C.
+
+* [This reddit
+  comment](https://www.reddit.com/r/C_Programming/comments/kbfa6t/comment/gfh8kid/?utm_source=share&utm_medium=web3x&utm_name=web3xcss&utm_term=1&utm_content=share_button)
+  gives a lot of good ideas about what a server can do. This was useful after I
+  could accept a message from Chrome and was like, "now what".
