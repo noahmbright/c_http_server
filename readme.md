@@ -33,7 +33,10 @@ happens as a side effect of this function. The returned `int` is -1 on failure.
 
 ### `listen()`
 
-After `bind()`ing to a port, you `listen()` for incoming connections.
+After `bind()`ing to a port, you `listen()` for incoming connections. Listen
+takes two arguments, the first is your socket descriptor. The second is another
+`int` that limits the number of incoming connections that will get queued and
+wait to be `accept()`ed.
 
 ### `accept()`
 
@@ -55,3 +58,7 @@ connection between client and server. These system calls work over TCP connectio
 
 * [RFC 1945](https://datatracker.ietf.org/doc/html/rfc1945). The RFC I found
   first, hence the one I'm using as my source of truth.
+
+* [Kazuho Oku's
+  Picohttpparser](https://github.com/h2o/picohttpparser/tree/master) This is a
+  really good resource for a fast parser, using some arcane C.

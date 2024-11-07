@@ -6,7 +6,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#define PORT "6969"
+#define PORT "5556"
 #define PENDING_CONNECTIONS 5
 
 int get_socket() {
@@ -21,8 +21,7 @@ int get_socket() {
   hints.ai_socktype = SOCK_STREAM;
   hints.ai_flags = AI_PASSIVE; // will end up binding localhost
 
-  if ((addrinfo_status = getaddrinfo(NULL, "6969", &hints, &server_info)) !=
-      0) {
+  if ((addrinfo_status = getaddrinfo(NULL, PORT, &hints, &server_info)) != 0) {
     fprintf(stderr, "getaddrinfo error: %s\n", gai_strerror(addrinfo_status));
     exit(1);
   }
@@ -39,12 +38,20 @@ int get_socket() {
       continue;
     }
 
-    if (bind(socket_descriptor, server_info->ai_addr,
-             server_info->ai_addrlen) == -1) {
+    int opt = 1;
+    if (setsockopt(socket_descriptor, SOL_SOCKET, SO_REUSEADDR, &opt,
+                   sizeof(opt)) == -1) {
+      perror("setsockopt");
+      exit(1);
+    }
+
+    if (bind(socket_descriptor, server_to_bind_info->ai_addr,
+             server_to_bind_info->ai_addrlen) == -1) {
       close(socket_descriptor);
       perror("binding server");
       continue;
     }
+    break;
   }
 
   if (server_to_bind_info == NULL) {
@@ -61,4 +68,20 @@ int get_socket() {
   }
 
   return socket_descriptor;
+}
+
+int accept_connection(int socket_descriptor) {
+  struct sockaddr_storage accepted_sockaddr;
+  socklen_t accepted_addr_size = sizeof(accepted_sockaddr);
+  int accepted_socket =
+      accept(socket_descriptor, (struct sockaddr *)&accepted_sockaddr,
+             &accepted_addr_size);
+
+  // listen
+  if (listen(socket_descriptor, PENDING_CONNECTIONS) == -1) {
+    perror("accept");
+    exit(1);
+  }
+
+  return accepted_socket;
 }
