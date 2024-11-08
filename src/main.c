@@ -40,6 +40,8 @@ int main() {
   int socket = get_socket();
   char buffer[BUFFER_LENGTH];
 
+  TaskQueue task_queue = new_task_queue();
+
   while (1) {
     int accepted_socket = accept_connection(socket);
 
@@ -52,6 +54,8 @@ int main() {
 
     buffer[received_bytes] = '\0';
     RequestLine request_line = parse_request_line(buffer);
+    // FIXME:
+    enqueue_task(&task_queue, new_task());
 
     printf("RECEIVED: \n%s\n", buffer);
     printf("PARSED REQUEST LINE HTTP VERSION: %d/%d\n", request_line.http_major,
