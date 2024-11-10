@@ -67,3 +67,6 @@ connection between client and server. These system calls work over TCP connectio
   comment](https://www.reddit.com/r/C_Programming/comments/kbfa6t/comment/gfh8kid/?utm_source=share&utm_medium=web3x&utm_name=web3xcss&utm_term=1&utm_content=share_button)
   gives a lot of good ideas about what a server can do. This was useful after I
   could accept a message from Chrome and was like, "now what".
+
+* [CodeVault](https://www.youtube.com/watch?app=desktop&v=_n2hE2gyPxU) on
+  YouTube. I learned almost the entirety of the pthreads API from his lessons. 

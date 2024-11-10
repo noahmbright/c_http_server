@@ -7,7 +7,7 @@
 #include <unistd.h>
 
 #define PORT "5556"
-#define PENDING_CONNECTIONS 5
+#define PENDING_CONNECTIONS 20
 
 int get_socket() {
   int addrinfo_status = 0;
@@ -76,12 +76,6 @@ int accept_connection(int socket_descriptor) {
   int accepted_socket =
       accept(socket_descriptor, (struct sockaddr *)&accepted_sockaddr,
              &accepted_addr_size);
-
-  // listen
-  if (listen(socket_descriptor, PENDING_CONNECTIONS) == -1) {
-    perror("accept");
-    exit(1);
-  }
 
   return accepted_socket;
 }
