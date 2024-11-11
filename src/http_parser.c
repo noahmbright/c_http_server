@@ -174,7 +174,7 @@ RelativePath parse_relative_path() {
 // absoluteURI: scheme ":" *(uchar | reserved)
 // https://datatracker.ietf.org/doc/html/rfc1945#section-5.1
 // Request-Line = Method SP Request-URI SP HTTP-Version CRLF
-RequestLine parse_request_line(const char *text) {
+static RequestLine parse_request_line(const char *text) {
   current_location = text;
   RequestLine request_line;
   memset(&request_line, 0, sizeof(request_line));
@@ -264,13 +264,15 @@ RequestLine parse_request_line(const char *text) {
   return request_line;
 }
 
-Header *new_header() {
+static Header *new_header() {
   Header *header = malloc(sizeof(Header));
   memset(header, 0, sizeof(Header));
   return header;
 }
 
-Header *parse_headers() {
+// from picohttpparser
+#define IS_PRINTABLE_ASCII(c) ((unsigned char)(c) - 040u < 0137u)
+static Header *parse_headers() {
   Header anchor;
   anchor.next = NULL;
   Header *previous_header = &anchor;
@@ -280,22 +282,24 @@ Header *parse_headers() {
   while (!check_crlf()) {
     Header *current_header = new_header();
 
+    // header names
     set_beginning_of_current();
-    while (is_alphabetic(*current_location))
+    while (IS_PRINTABLE_ASCII(*current_location) && *current_location != ':')
       current_location++;
     current_header->header_string = beginning_of_current;
     current_header->header_length = current_length();
 
     skip_whitespace();
 
-    if (!(*current_location++ == ':')) {
+    if (*current_location++ != ':') {
       fprintf(stderr, "header not formatted\n");
       exit(1);
     }
 
+    // header bodies
     skip_whitespace();
     set_beginning_of_current();
-    while (is_alphabetic(*current_location))
+    while (IS_PRINTABLE_ASCII(*current_location))
       current_location++;
     current_header->body_string = beginning_of_current;
     current_header->body_length = current_length();
@@ -314,7 +318,10 @@ Header *parse_headers() {
 //                  | Simple-Response
 //                  | Full-Request       ; HTTP/1.0 messages
 //                  | Full-Response
-void parse_http(const char *text) {
-  current_location = text;
-  beginning_of_current = text;
+HTTP_Request parse_http_request(const char *text) {
+  HTTP_Request request;
+  request.request_line = parse_request_line(text);
+  printf("about to parse headers, at\n%s", current_location);
+  request.headers = parse_headers();
+  return request;
 }

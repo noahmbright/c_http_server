@@ -42,9 +42,20 @@ void serve_request(Task *task) {
 
   assert(received_bytes < BUFFER_LENGTH);
   buffer[received_bytes] = '\0';
-  RequestLine request_line = parse_request_line(buffer);
+
+  HTTP_Request request = parse_http_request(buffer);
+  RequestLine request_line = request.request_line;
+  Header *headers = request.headers;
+
   printf("request line url is %.*s\n", request_line.relative_path.path_length,
          request_line.relative_path.path);
+
+  for (; headers; headers = headers->next) {
+    printf("request has header %.*s\n", headers->header_length,
+           headers->header_string);
+    printf("request has header body %.*s\n", headers->body_length,
+           headers->body_string);
+  }
 
   unsigned sent_bytes, message_length;
   const char *message;

@@ -46,6 +46,11 @@ typedef struct Header {
   struct Header *next;
 } Header;
 
+typedef struct {
+  RequestLine request_line;
+  Header *headers;
+} HTTP_Request;
+
 typedef struct Task {
   struct Task *next;
   int socket;
@@ -67,7 +72,7 @@ int get_socket();
 int accept_connection(int socket_descriptor);
 
 // parsing
-RequestLine parse_request_line(const char *);
+HTTP_Request parse_http_request(const char *);
 
 // task queue
 TaskQueue new_task_queue();
