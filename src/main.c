@@ -50,13 +50,6 @@ void serve_request(Task *task) {
   printf("request line url is %.*s\n", request_line.relative_path.path_length,
          request_line.relative_path.path);
 
-  for (; headers; headers = headers->next) {
-    printf("request has header %.*s\n", headers->header_length,
-           headers->header_string);
-    printf("request has header body %.*s\n", headers->body_length,
-           headers->body_string);
-  }
-
   unsigned sent_bytes, message_length;
   const char *message;
 
@@ -72,6 +65,18 @@ void serve_request(Task *task) {
   if ((sent_bytes = send(accepted_socket, message, message_length, 0)) == -1) {
     perror("sent -1 bytes");
   }
+
+  while (headers) {
+    printf("request has header %.*s\n", headers->header_length,
+           headers->header_string);
+    printf("request has header body %.*s\n", headers->body_length,
+           headers->body_string);
+
+    Header *temp = headers;
+    headers = headers->next;
+    free(temp);
+  }
+
   close(accepted_socket);
 }
 
