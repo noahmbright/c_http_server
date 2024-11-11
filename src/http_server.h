@@ -26,22 +26,10 @@ typedef struct {
 
 typedef struct {
   int is_valid;
-
-  const char *host;
-  unsigned host_length;
-
-  unsigned port;
-
-  RelativePath path;
-} HTTP_URL;
-
-typedef struct {
-  int is_valid;
   const char *method;
   unsigned method_length;
 
-  URI uri;
-  HTTP_URL http_url;
+  RelativePath relative_path;
 
   unsigned http_major;
   unsigned http_minor;

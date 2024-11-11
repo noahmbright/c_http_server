@@ -28,7 +28,7 @@ void serve_request(Task *task) {
   uint64_t tid;
   pthread_threadid_np(NULL, &tid);
   printf("thread %llul sleeping\n", tid);
-  sleep(5);
+  sleep(1);
   int accepted_socket = task->socket;
 
   char buffer[BUFFER_LENGTH];
@@ -43,6 +43,8 @@ void serve_request(Task *task) {
   assert(received_bytes < BUFFER_LENGTH);
   buffer[received_bytes] = '\0';
   RequestLine request_line = parse_request_line(buffer);
+  printf("request line url is %.*s\n", request_line.relative_path.path_length,
+         request_line.relative_path.path);
 
   unsigned sent_bytes, message_length;
   const char *message;

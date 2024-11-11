@@ -1,12 +1,17 @@
 #include "http_server.h"
 #include <assert.h>
-#include <cstdio>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 const char *current_location;
 const char *beginning_of_current;
+
+int expect_and_skip_char(char c) {
+  if (c != *current_location++)
+    return 0;
+  return 1;
+}
 
 static void set_beginning_of_current() {
   beginning_of_current = current_location;
@@ -57,29 +62,120 @@ static unsigned current_length() {
   return current_location - beginning_of_current;
 }
 
-// https://datatracker.ietf.org/doc/html/rfc1945#section-3.2
-static URI parse_uri() {
-
-  set_beginning_of_current();
-  while (!is_whitespace())
-    current_location++;
-
-  URI uri;
-  uri.length = current_length();
-  uri.beginning_of_uri = beginning_of_current;
-
-  return uri;
-}
-
 static int check_keyword(const char *keyword) {
   int length = strlen(keyword);
   return current_length() == length &&
          memcmp(beginning_of_current, keyword, length) == 0;
 }
 
+static int is_safe() {
+  char c = *current_location;
+  return (c == '$' || c == '-' || c == '_' || c == '.');
+}
+
+static int is_reserved() {
+  char c = *current_location;
+  return (c == ';' | c == '/' || c == '?' || c == ':' || c == '@' || c == '&' ||
+          c == '=' || c == '+');
+}
+
+static int is_extra() {
+  char c = *current_location;
+  return (c == '!' || c == '*' || c == '\'' || c == '(' || c == ')' ||
+          c == ',');
+}
+
+// FIXME: Missing national
+
+static int is_unreserved() {
+  char c = *current_location;
+  return (is_alphabetic(*current_location) || is_numeric(*current_location) ||
+          is_safe() || is_extra());
+}
+
+// Missing escape
+static int is_uchar() { return is_unreserved(); }
+
+static int is_pchar() {
+  char c = *current_location;
+  return is_uchar() || c == ':' || c == '@' || c == '&' || c == '=' || c == '+';
+}
+
+static int is_scheme_char() {
+  char c = *current_location;
+  return is_alphabetic(c) || is_numeric(c) || c == '.' || c == '+' || c == '-';
+}
+
+static RelativePath new_relative_path() {
+  RelativePath p;
+  p.is_valid = 0;
+  p.path = NULL;
+  p.path_length = 0;
+  p.params = NULL;
+  p.params_length = 0;
+  p.query = NULL;
+  p.query_length = 0;
+  return p;
+}
+
+// absolute path: "/" relative path
+// relative path: [path] [";" params] ["?" query]
+// path: ((1*pchar) "/")* [/]
+// params: param *(";" param)
+// param: *(pchar | "/")
+// query: *(uchar | reserved)
+RelativePath parse_relative_path() {
+  RelativePath relative_path = new_relative_path();
+
+  set_beginning_of_current();
+  while (is_pchar() || *current_location == '/')
+    ++current_location;
+
+  relative_path.path = beginning_of_current;
+  relative_path.path_length = current_length();
+
+  // params
+  if (*current_location == ';') {
+    set_beginning_of_current();
+    while (is_pchar() || *current_location == '/')
+      ++current_location;
+
+    relative_path.params = beginning_of_current;
+    relative_path.params_length = current_length();
+  }
+
+  // query
+  if (*current_location == '?') {
+    set_beginning_of_current();
+    while (is_uchar() || is_reserved())
+      ++current_location;
+
+    relative_path.query = beginning_of_current;
+    relative_path.query_length = current_length();
+  }
+
+  // invalid
+  if (!is_whitespace()) {
+    return relative_path;
+  }
+
+  relative_path.is_valid = 1;
+  return relative_path;
+}
+
+// https://datatracker.ietf.org/doc/html/rfc1945#section-3.2
+// this function assumes that current_location points to the beginning of the
+// URI on calling
+// URI: (absoluteURI | relative URI) ["#" fragment]
+//
+// absolute URIs begin with either alphanumerics, +, -, or .
+// relative URIs begin with //
+// so its easy to disambiguate
+// absoluteURI: scheme ":" *(uchar | reserved)
 // https://datatracker.ietf.org/doc/html/rfc1945#section-5.1
 // Request-Line = Method SP Request-URI SP HTTP-Version CRLF
-static RequestLine parse_request_line(const char *text) {
+RequestLine parse_request_line(const char *text) {
+  current_location = text;
   RequestLine request_line;
   memset(&request_line, 0, sizeof(request_line));
 
@@ -87,6 +183,7 @@ static RequestLine parse_request_line(const char *text) {
   set_beginning_of_current();
   advance_to_end_of_current();
 
+  // method
   while (is_alphabetic(*current_location))
     ++current_location;
   request_line.method = beginning_of_current;
@@ -96,14 +193,27 @@ static RequestLine parse_request_line(const char *text) {
   // number of spaces and tabs
   skip_whitespace();
 
-  request_line.uri = parse_uri();
+  // URI
+  // only parsing absolute path
+  set_beginning_of_current();
+  if (*current_location != '/') {
+    return request_line;
+  }
+  RelativePath relative_path = parse_relative_path();
+  if (relative_path.is_valid) {
+    request_line.relative_path = relative_path;
+  } else {
+    return request_line;
+  }
+
   skip_whitespace();
 
-  // no HHTP version: found a simple request
+  // no HTTP version: found a simple request
   if (check_crlf()) {
     request_line.is_simple = 1;
     request_line.http_minor = 9;
     consume_crlf();
+    request_line.is_valid = 1;
     return request_line;
   }
 
@@ -111,17 +221,19 @@ static RequestLine parse_request_line(const char *text) {
   set_beginning_of_current();
   advance_to_end_of_current();
   int http_properly_formatted =
-      (current_length() == 4 && memcmp(beginning_of_current, "HTTP", 4) == 0);
+      (current_length() == 4 && (memcmp(beginning_of_current, "HTTP", 4) == 0));
 
   // FIXME handle this better
   if (!http_properly_formatted) {
     fprintf(stderr, "Request line HTTP not formatted\n");
-    exit(1);
+    request_line.is_valid = 0;
+    return request_line;
   }
 
   if (!(*current_location++ == '/')) {
     fprintf(stderr, "Request line HTTP not formatted\n");
-    exit(1);
+    request_line.is_valid = 0;
+    return request_line;
   }
 
   set_beginning_of_current();
@@ -131,7 +243,8 @@ static RequestLine parse_request_line(const char *text) {
 
   if (!(*current_location++ == '.')) {
     fprintf(stderr, "Request line HTTP not formatted\n");
-    exit(1);
+    request_line.is_valid = 0;
+    return request_line;
   }
 
   set_beginning_of_current();
@@ -141,12 +254,13 @@ static RequestLine parse_request_line(const char *text) {
 
   skip_whitespace();
 
-  // FIXME handle this better
   if (!consume_crlf()) {
     fprintf(stderr, "Request line not followed by CRLF\n");
-    exit(1);
+    request_line.is_valid = 0;
+    return request_line;
   }
 
+  request_line.is_valid = 1;
   return request_line;
 }
 
