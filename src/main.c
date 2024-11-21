@@ -14,8 +14,20 @@
 #include <unistd.h>
 
 #define BUFFER_LENGTH (4096)
+#define MAX_ATTEMPTS (10)
+
 pthread_mutex_t queue_mutex;
 pthread_cond_t queue_condition;
+
+void send_400_response(int accepted_socket) {
+  int sent_bytes;
+  const char *message = "HTTP/1.0 400\r\n";
+  int message_length = 14;
+  if ((sent_bytes = send(accepted_socket, message, message_length, 0)) == -1) {
+    perror("sent -1 bytes on file_to_send");
+  }
+  close(accepted_socket);
+}
 
 void sigchld_handler(int s) {
   int saved_errno = errno;
@@ -24,16 +36,43 @@ void sigchld_handler(int s) {
   errno = saved_errno;
 }
 
+static char *read_file(const char *path, long *size) {
+  printf("trying to open file: %s\n", path);
+  FILE *file = fopen(path, "r");
+  if (!file) {
+    return NULL;
+  }
+
+  fseek(file, 0L, SEEK_END);
+  long file_size = ftell(file);
+  rewind(file);
+
+  char *buffer = malloc(file_size + 1);
+  if (!buffer) {
+    return NULL;
+  }
+
+  long bytes_read = fread(buffer, sizeof(char), file_size, file);
+  if (bytes_read < file_size) {
+    return NULL;
+  }
+
+  buffer[file_size] = '\0';
+  *size = file_size;
+  fclose(file);
+  return buffer;
+}
+
 void serve_request(Task *task) {
   uint64_t tid;
   pthread_threadid_np(NULL, &tid);
-  printf("thread %llul sleeping\n", tid);
+  printf("thread %llu sleeping\n", tid);
   sleep(1);
   int accepted_socket = task->socket;
 
   char buffer[BUFFER_LENGTH];
 
-  printf("thread %llul recv'ing\n", tid);
+  printf("thread %llu recv'ing\n", tid);
   unsigned received_bytes = recv(accepted_socket, buffer, BUFFER_LENGTH, 0);
   if ((received_bytes) == -1) {
     perror("received -1 bytes");
@@ -46,25 +85,58 @@ void serve_request(Task *task) {
   HTTP_Request request = parse_http_request(buffer);
   RequestLine request_line = request.request_line;
   Header *headers = request.headers;
+  const char *url = request_line.relative_path.path;
 
   printf("request line url is %.*s\n", request_line.relative_path.path_length,
-         request_line.relative_path.path);
+         url);
 
-  unsigned sent_bytes, message_length;
-  const char *message;
+  unsigned sent_bytes;
+  unsigned message_length = 0;
 
-  if (request_line.is_valid) {
-    message = "HTTP/1.0 200";
-    message_length = 12;
+  if (!request_line.is_valid) {
+    fprintf(stderr, "invalid request line, responding 400\n");
+    send_400_response(accepted_socket);
+    return;
+  }
+
+  const char *filepath = NULL;
+  if (request_line.relative_path.path_length == 1 &&
+      strncmp(url, "/", 1) == 0) {
+    filepath = "files_to_serve/index.html";
   } else {
-    message = "HTTP/1.0 400";
-    message_length = 12;
+    filepath = url;
   }
 
-  printf("thread %llul sending\n", tid);
-  if ((sent_bytes = send(accepted_socket, message, message_length, 0)) == -1) {
-    perror("sent -1 bytes");
+  long file_size = 0;
+  const char *file_to_send = read_file(filepath, &file_size);
+
+  int attempts = 1;
+  while (file_to_send == NULL && attempts < MAX_ATTEMPTS) {
+    printf("asdf\n");
+    file_to_send = read_file(request_line.relative_path.path, &file_size);
+    ++attempts;
   }
+
+  if (file_to_send == NULL) {
+    fprintf(stderr, "file_to_send is NULL, responding 400\n");
+    send_400_response(accepted_socket);
+    return;
+  }
+
+  const char *response_header = "HTTP/1.0 200\r\n";
+  message_length += 14;
+
+  char content_length_header[50];
+  int content_length_bytes_written = snprintf(
+      content_length_header, 50, "Content-Length: %ld\r\n", file_size + 1);
+  if (content_length_bytes_written > 50) {
+    fprintf(stderr, "wrote too large a content length, responding 400\n");
+    send_400_response(accepted_socket);
+    free((void *)file_to_send);
+    return;
+  }
+
+  const char *content_type = "Content-Type: text/html; charset=utf-8\r\n";
 
   while (headers) {
     printf("request has header %.*s\n", headers->header_length,
@@ -77,6 +149,25 @@ void serve_request(Task *task) {
     free(temp);
   }
 
+  char http_response[8192];
+  int message_bytes_written =
+      snprintf(http_response, 8192, "%s%s%s\r\n%s", response_header,
+               content_length_header, content_type, file_to_send);
+  if (message_bytes_written > 8192) {
+    fprintf(stderr, "wrote too large a message, responding 400\n");
+    send_400_response(accepted_socket);
+    free((void *)file_to_send);
+    return;
+  }
+
+  printf("sending message:\n%s\n", http_response);
+
+  if ((sent_bytes = send(accepted_socket, http_response, message_length, 0)) ==
+      -1) {
+    perror("sent -1 bytes");
+  }
+
+  free((void *)file_to_send);
   close(accepted_socket);
 }
 
