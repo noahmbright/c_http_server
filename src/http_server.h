@@ -70,6 +70,8 @@ typedef struct {
 // sockets
 int get_socket();
 int accept_connection(int socket_descriptor);
+int send_all(int receiving_socket, const char *buffer, long bytes_to_send,
+             long *bytes_sent);
 
 // parsing
 HTTP_Request parse_http_request(const char *);

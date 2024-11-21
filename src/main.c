@@ -20,7 +20,7 @@ pthread_mutex_t queue_mutex;
 pthread_cond_t queue_condition;
 
 void send_400_response(int accepted_socket) {
-  int sent_bytes;
+  long sent_bytes;
   const char *message = "HTTP/1.0 400\r\n";
   int message_length = 14;
   if ((sent_bytes = send(accepted_socket, message, message_length, 0)) == -1) {
@@ -77,12 +77,11 @@ void serve_request(Task *task) {
 
   printf("thread %llu recv'ing\n", tid);
   unsigned received_bytes = recv(accepted_socket, buffer, BUFFER_LENGTH, 0);
-  if ((received_bytes) == -1) {
+  if (received_bytes == -1 || received_bytes > BUFFER_LENGTH) {
     perror("received -1 bytes");
-    exit(1);
+    send_400_response(accepted_socket);
+    return;
   }
-
-  assert(received_bytes < BUFFER_LENGTH);
   buffer[received_bytes] = '\0';
 
   HTTP_Request request = parse_http_request(buffer);
@@ -93,7 +92,7 @@ void serve_request(Task *task) {
   printf("request line url is %.*s\n", request_line.relative_path.path_length,
          url);
 
-  unsigned sent_bytes;
+  long sent_bytes;
   unsigned message_length = 0;
 
   if (!request_line.is_valid) {
@@ -163,8 +162,8 @@ void serve_request(Task *task) {
 
   printf("sending message:\n%s\n", http_response);
 
-  if ((sent_bytes = send(accepted_socket, http_response,
-                         message_bytes_written + 1, 0)) == -1) {
+  if (send_all(accepted_socket, http_response, message_bytes_written + 1,
+               &sent_bytes) == -1) {
     perror("sent -1 bytes");
   }
 
@@ -174,6 +173,7 @@ void serve_request(Task *task) {
     free(temp);
   }
 
+  printf("Finished serving request\n");
   free((void *)file_to_send);
   close(accepted_socket);
 }

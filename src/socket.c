@@ -79,3 +79,21 @@ int accept_connection(int socket_descriptor) {
 
   return accepted_socket;
 }
+
+int send_all(int receiving_socket, const char *buffer, long bytes_to_send,
+             long *bytes_sent) {
+  long sent_bytes;
+  long total_sent = 0;
+
+  while (total_sent < bytes_to_send) {
+    if ((sent_bytes = send(receiving_socket, buffer, bytes_to_send + 1, 0)) ==
+        -1) {
+      perror("send all");
+      return -1;
+    }
+    total_sent += sent_bytes;
+  }
+  *bytes_sent = total_sent;
+
+  return 0;
+}
