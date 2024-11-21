@@ -40,6 +40,7 @@ static char *read_file(const char *path, long *size) {
   printf("trying to open file: %s\n", path);
   FILE *file = fopen(path, "r");
   if (!file) {
+    perror("failed to open file to read");
     return NULL;
   }
 
@@ -49,11 +50,13 @@ static char *read_file(const char *path, long *size) {
 
   char *buffer = malloc(file_size + 1);
   if (!buffer) {
+    perror("failed to malloc");
     return NULL;
   }
 
   long bytes_read = fread(buffer, sizeof(char), file_size, file);
   if (bytes_read < file_size) {
+    perror("failed to fread");
     return NULL;
   }
 
@@ -99,12 +102,16 @@ void serve_request(Task *task) {
     return;
   }
 
-  const char *filepath = NULL;
+  char filepath[256];
+  int filepath_bytes_written;
   if (request_line.relative_path.path_length == 1 &&
       strncmp(url, "/", 1) == 0) {
-    filepath = "files_to_serve/index.html";
+    filepath_bytes_written =
+        snprintf(filepath, 256, "files_to_serve/index.html");
   } else {
-    filepath = url;
+    filepath_bytes_written =
+        snprintf(filepath, 256, "files_to_serve/%.*s",
+                 request_line.relative_path.path_length, url);
   }
 
   long file_size = 0;
@@ -112,7 +119,6 @@ void serve_request(Task *task) {
 
   int attempts = 1;
   while (file_to_send == NULL && attempts < MAX_ATTEMPTS) {
-    printf("asdf\n");
     file_to_send = read_file(request_line.relative_path.path, &file_size);
     ++attempts;
   }
@@ -136,17 +142,12 @@ void serve_request(Task *task) {
     return;
   }
 
-  const char *content_type = "Content-Type: text/html; charset=utf-8\r\n";
-
-  while (headers) {
-    printf("request has header %.*s\n", headers->header_length,
-           headers->header_string);
-    printf("request has header body %.*s\n", headers->body_length,
-           headers->body_string);
-
-    Header *temp = headers;
-    headers = headers->next;
-    free(temp);
+  const char *content_type = NULL;
+  if (request_line.relative_path.path_length == 12 &&
+      strncmp(url, "/favicon.ico", 12) == 0) {
+    content_type = "Content-Type: image/ico\r\n";
+  } else {
+    content_type = "Content-Type: text/html; charset=utf-8\r\n";
   }
 
   char http_response[8192];
@@ -162,9 +163,15 @@ void serve_request(Task *task) {
 
   printf("sending message:\n%s\n", http_response);
 
-  if ((sent_bytes = send(accepted_socket, http_response, message_length, 0)) ==
-      -1) {
+  if ((sent_bytes = send(accepted_socket, http_response,
+                         message_bytes_written + 1, 0)) == -1) {
     perror("sent -1 bytes");
+  }
+
+  while (headers) {
+    Header *temp = headers;
+    headers = headers->next;
+    free(temp);
   }
 
   free((void *)file_to_send);

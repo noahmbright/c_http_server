@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(http_server)
+project(tuke_http_server)
 set(CMAKE_C_STANDARD 99)
 
 add_compile_options(-g)
