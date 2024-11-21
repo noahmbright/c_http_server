@@ -51,6 +51,31 @@ to `send()` and `recv()` on. The socket descriptor from the original call to
 reliable message transfer, so you use TCP connections, which maintain a
 connection between client and server. These system calls work over TCP connections.
 
+## Multithreading
+
+Threading is done using a threadpool. The idea is that starting a brand new thread
+every single time a connection comes in is expensive, and an attacker can send in
+some excessive number of requests and bog down your system with thousands of
+new threads. 
+
+The alternative is to start a fixed number of worker threads at the beginning
+of the program. When the main thread gets a connection, it puts a task in a
+task queue. When the task queue is nonempty, worker threads will grab the next
+task and serve the request. 
+
+There are a few chances for data races in this model. The tasks are stored in 
+a shared resource: the main thread's task queue. It's possible that the OS
+will schedule a context switch while a worker is grabbing a task from the queue,
+and then another worker thread will also end up grabbing the same task. The
+critical sections in this program are thus where the tasks are enqueued by the
+main thread and dequeued by the workers. We simply need to lock and unlock a
+shared mutex before and after touching the queue.
+
+To avoid the workers constantly spinning while they wait for incoming tasks,
+we use condition variables. The worker threads sleep while the task queue has
+size 0. When the main thread enqueues a task, it signals that there is work to
+do, and the next thread in line gets to work.
+
 # Resources
 
 * [Beej's Guide to Network Programming](https://beej.us/guide/bgnet/). The
