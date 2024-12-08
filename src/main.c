@@ -15,6 +15,7 @@
 
 #define BUFFER_LENGTH (4096)
 #define MAX_ATTEMPTS (5)
+#define TUKE_DEBUG
 
 pthread_mutex_t queue_mutex;
 pthread_cond_t queue_condition;
@@ -103,7 +104,29 @@ void serve_request(Task *task) {
 
   printf("request line url is %.*s\n", request_line.relative_path.path_length,
          url);
+  printf("request line query has length %d, body is %.*s\n",
+         request_line.relative_path.query_length,
+         request_line.relative_path.query_length,
+         request_line.relative_path.query);
 #endif
+
+  const char *query_key = request_line.relative_path.query;
+  unsigned key_length = request_line.relative_path.query_length;
+  const char *query_value = NULL;
+  unsigned value_length = 0;
+  if (request_line.relative_path.query_length) {
+    for (unsigned i = 0; i < request_line.relative_path.query_length; ++i) {
+      if (request_line.relative_path.query[i] == '=') {
+        key_length = i;
+        query_value = query_key + i + 1;
+        value_length = request_line.relative_path.query_length - key_length - 1;
+      }
+    }
+#ifdef TUKE_DEBUG
+    printf("Got query with key %.*s and value %.*s\n", key_length, query_key,
+           value_length, query_value);
+#endif
+  }
 
   long sent_bytes;
   unsigned message_length = 0;
@@ -211,9 +234,9 @@ void *start_server_thread(void *args) {
     while (task_queue->size == 0)
       pthread_cond_wait(&queue_condition, &queue_mutex);
 
-    // want the actual serving to occur outside the critical section in parallel
-    // unlock once we got something to do
-    // allow another thread to start waiting on stuff to do
+    // want the actual serving to occur outside the critical section in
+    // parallel unlock once we got something to do allow another thread to
+    // start waiting on stuff to do
     Task *task = dequeue_task(task_queue);
     pthread_mutex_unlock(&queue_mutex);
 

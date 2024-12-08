@@ -138,6 +138,7 @@ RelativePath parse_relative_path() {
 
   // params
   if (*current_location == ';') {
+    ++current_location;
     set_beginning_of_current();
     while (is_pchar() || *current_location == '/')
       ++current_location;
@@ -148,6 +149,7 @@ RelativePath parse_relative_path() {
 
   // query
   if (*current_location == '?') {
+    ++current_location;
     set_beginning_of_current();
     while (is_uchar() || is_reserved())
       ++current_location;
@@ -326,7 +328,9 @@ HTTP_Request parse_http_request(const char *text) {
   request.is_valid = 0;
   request.headers = malloc(sizeof(Header) * MAX_HEADERS);
   request.request_line = parse_request_line(text);
+#ifdef TUKE_DEBUG
   printf("about to parse headers, at\n%s", current_location);
+#endif
   parse_headers(&request);
   return request;
 }
