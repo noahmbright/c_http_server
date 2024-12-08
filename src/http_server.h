@@ -42,13 +42,13 @@ typedef struct Header {
   unsigned header_length;
   const char *body_string;
   unsigned body_length;
-
-  struct Header *next;
 } Header;
 
 typedef struct {
   RequestLine request_line;
   Header *headers;
+  unsigned num_headers;
+  int is_valid;
 } HTTP_Request;
 
 typedef struct Task {

@@ -14,7 +14,7 @@
 #include <unistd.h>
 
 #define BUFFER_LENGTH (4096)
-#define MAX_ATTEMPTS (10)
+#define MAX_ATTEMPTS (5)
 
 pthread_mutex_t queue_mutex;
 pthread_cond_t queue_condition;
@@ -85,12 +85,25 @@ void serve_request(Task *task) {
   buffer[received_bytes] = '\0';
 
   HTTP_Request request = parse_http_request(buffer);
+  if (!request.is_valid) {
+    send_400_response(accepted_socket);
+    free(request.headers);
+    return;
+  }
   RequestLine request_line = request.request_line;
   Header *headers = request.headers;
   const char *url = request_line.relative_path.path;
 
+#ifdef TUKE_DEBUG
+  for (int i = 0; i < request.num_headers; i++) {
+    printf("Got header %.*s\nBody is: %.*s\n", headers[i].header_length,
+           headers[i].header_string, headers[i].body_length,
+           headers[i].body_string);
+  }
+
   printf("request line url is %.*s\n", request_line.relative_path.path_length,
          url);
+#endif
 
   long sent_bytes;
   unsigned message_length = 0;
@@ -98,6 +111,7 @@ void serve_request(Task *task) {
   if (!request_line.is_valid) {
     fprintf(stderr, "invalid request line, responding 400\n");
     send_400_response(accepted_socket);
+    free(request.headers);
     return;
   }
 
@@ -125,6 +139,7 @@ void serve_request(Task *task) {
   if (file_to_send == NULL) {
     fprintf(stderr, "file_to_send is NULL, responding 400\n");
     send_400_response(accepted_socket);
+    free(request.headers);
     return;
   }
 
@@ -137,6 +152,7 @@ void serve_request(Task *task) {
   if (content_length_bytes_written > 50) {
     fprintf(stderr, "wrote too large a content length, responding 400\n");
     send_400_response(accepted_socket);
+    free(request.headers);
     free((void *)file_to_send);
     return;
   }
@@ -167,14 +183,9 @@ void serve_request(Task *task) {
     perror("sent -1 bytes");
   }
 
-  while (headers) {
-    Header *temp = headers;
-    headers = headers->next;
-    free(temp);
-  }
-
   printf("Finished serving request\n");
   free((void *)file_to_send);
+  free(request.headers);
   close(accepted_socket);
 }
 

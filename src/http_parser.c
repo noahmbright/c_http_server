@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define MAX_HEADERS 50
+
 const char *current_location;
 const char *beginning_of_current;
 
@@ -264,36 +266,38 @@ static RequestLine parse_request_line(const char *text) {
   return request_line;
 }
 
-static Header *new_header() {
-  Header *header = malloc(sizeof(Header));
-  memset(header, 0, sizeof(Header));
+static Header new_header() {
+  Header header;
+  header.header_string = NULL;
+  header.header_length = 0;
+  header.body_string = NULL;
+  header.body_length = 0;
   return header;
 }
 
 // from picohttpparser
-#define IS_PRINTABLE_ASCII(c) ((unsigned char)(c) - 040u < 0137u)
-static Header *parse_headers() {
-  Header anchor;
-  anchor.next = NULL;
-  Header *previous_header = &anchor;
-
+#define IS_PRINTABLE_ASCII(c) ((unsigned char)(c)-040u < 0137u)
+static void parse_headers(HTTP_Request *request) {
+  int num_headers = 0;
   // headers end when we get two CRLFs in a row
   // the first comes from the end of the last header
   while (!check_crlf()) {
-    Header *current_header = new_header();
+    Header current_header = new_header();
 
     // header names
     set_beginning_of_current();
     while (IS_PRINTABLE_ASCII(*current_location) && *current_location != ':')
       current_location++;
-    current_header->header_string = beginning_of_current;
-    current_header->header_length = current_length();
+
+    current_header.header_string = beginning_of_current;
+    current_header.header_length = current_length();
 
     skip_whitespace();
 
     if (*current_location++ != ':') {
       fprintf(stderr, "header not formatted\n");
-      exit(1);
+      request->is_valid = 0;
+      return;
     }
 
     // header bodies
@@ -301,17 +305,16 @@ static Header *parse_headers() {
     set_beginning_of_current();
     while (IS_PRINTABLE_ASCII(*current_location))
       current_location++;
-    current_header->body_string = beginning_of_current;
-    current_header->body_length = current_length();
+    current_header.body_string = beginning_of_current;
+    current_header.body_length = current_length();
 
     consume_crlf();
-
-    previous_header->next = current_header;
-    previous_header = previous_header->next;
+    request->headers[num_headers++] = current_header;
   }
 
   consume_crlf();
-  return anchor.next;
+  request->num_headers = num_headers;
+  request->is_valid = 1;
 }
 
 // HTTP-message   = Simple-Request       ; HTTP/0.9 messages
@@ -320,8 +323,10 @@ static Header *parse_headers() {
 //                  | Full-Response
 HTTP_Request parse_http_request(const char *text) {
   HTTP_Request request;
+  request.is_valid = 0;
+  request.headers = malloc(sizeof(Header) * MAX_HEADERS);
   request.request_line = parse_request_line(text);
   printf("about to parse headers, at\n%s", current_location);
-  request.headers = parse_headers();
+  parse_headers(&request);
   return request;
 }
